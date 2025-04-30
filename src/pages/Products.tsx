@@ -5,8 +5,23 @@ import { Button } from "@/components/ui/button";
 import ProductGrid from "@/components/products/ProductGrid";
 import ProductFilters from "@/components/products/ProductFilters";
 import { useProducts, Product } from "@/hooks/useProducts";
-import { ArrowUpIcon, ArrowDownIcon, SlidersHorizontal } from "lucide-react";
+import { ArrowUpIcon, ArrowDownIcon, SlidersHorizontal, SortAsc, SortDesc } from "lucide-react";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { 
+  Pagination, 
+  PaginationContent, 
+  PaginationEllipsis, 
+  PaginationItem, 
+  PaginationLink, 
+  PaginationNext, 
+  PaginationPrevious 
+} from "@/components/ui/pagination";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Function to filter and sort products
 const filterAndSortProducts = (
@@ -48,10 +63,14 @@ const filterAndSortProducts = (
 };
 
 const Products = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { products, isLoading, error } = useProducts();
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [filterCount, setFilterCount] = useState(0);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const productsPerPage = 12;
 
   // Get initial filters from URL params
   const initialCategory = searchParams.get("category") || undefined;
@@ -59,6 +78,7 @@ const Products = () => {
   const initialMinPrice = parseInt(searchParams.get("minPrice") || "0");
   const initialMaxPrice = parseInt(searchParams.get("maxPrice") || "999999999");
   const initialSort = searchParams.get("sort") || "newest";
+  const initialPage = parseInt(searchParams.get("page") || "1");
 
   const [filters, setFilters] = useState({
     category: initialCategory,
@@ -67,10 +87,30 @@ const Products = () => {
     sort: initialSort,
   });
 
+  // Set initial page from URL
+  useEffect(() => {
+    setCurrentPage(initialPage);
+  }, [initialPage]);
+
   // Handle filter changes from the filter component
   const handleFilterChange = (newFilters: any) => {
     setFilters({ ...filters, ...newFilters });
+    setCurrentPage(1); // Reset to first page when filters change
   };
+
+  // Update URL when filters or pagination changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+    
+    if (filters.category) params.set("category", filters.category);
+    if (filters.brand) params.set("brand", filters.brand);
+    if (filters.priceRange[0] > 0) params.set("minPrice", filters.priceRange[0].toString());
+    if (filters.priceRange[1] < 999999999) params.set("maxPrice", filters.priceRange[1].toString());
+    params.set("sort", filters.sort);
+    params.set("page", currentPage.toString());
+    
+    setSearchParams(params);
+  }, [filters, currentPage, setSearchParams]);
 
   // Apply filters when products or filters change
   useEffect(() => {
@@ -98,10 +138,30 @@ const Products = () => {
     }
   }, [products, filters, isLoading]);
 
+  // Calculate pagination values
+  const indexOfLastProduct = currentPage * productsPerPage;
+  const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
+  const currentProducts = filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
+  const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+
+  // Handle page changes
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Get sort icon
   const getSortIcon = () => {
-    if (filters.sort === "price-low") return <ArrowUpIcon className="h-4 w-4" />;
-    if (filters.sort === "price-high") return <ArrowDownIcon className="h-4 w-4" />;
+    if (filters.sort === "price-low" || filters.sort === "name-asc") 
+      return <ArrowUpIcon className="h-4 w-4" />;
+    if (filters.sort === "price-high" || filters.sort === "name-desc") 
+      return <ArrowDownIcon className="h-4 w-4" />;
     return null;
+  };
+
+  // Handle sort change
+  const handleSortChange = (sortOption: string) => {
+    handleFilterChange({ sort: sortOption });
   };
 
   return (
@@ -159,6 +219,33 @@ const Products = () => {
               <ProductFilters allProducts={products} onFilterChange={handleFilterChange} />
             </SheetContent>
           </Sheet>
+
+          {/* Mobile Sort Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                {filters.sort === "newest" ? <SortDesc className="h-4 w-4" /> : getSortIcon()}
+                Sort
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleSortChange("newest")}>
+                Newest
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange("price-low")}>
+                Price: Low to High
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange("price-high")}>
+                Price: High to Low
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange("name-asc")}>
+                Name: A to Z
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleSortChange("name-desc")}>
+                Name: Z to A
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -174,23 +261,47 @@ const Products = () => {
           <div className="hidden md:flex justify-between items-center mb-6">
             <div>
               <p className="text-sm text-muted-foreground">
-                Showing {filteredProducts.length} products
+                Showing {Math.min(filteredProducts.length, indexOfFirstProduct + 1)}-
+                {Math.min(indexOfLastProduct, filteredProducts.length)} of {filteredProducts.length} products
               </p>
             </div>
             <div className="flex items-center gap-1">
-              <span className="text-sm mr-2">Sort: </span>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="flex items-center gap-1"
-              >
-                {filters.sort === "newest" && "Newest"}
-                {filters.sort === "price-low" && "Price: Low to High"}
-                {filters.sort === "price-high" && "Price: High to Low"}
-                {filters.sort === "name-asc" && "Name: A to Z"}
-                {filters.sort === "name-desc" && "Name: Z to A"}
-                {getSortIcon()}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex items-center gap-1"
+                  >
+                    <span>Sort by: </span>
+                    <span className="font-medium">
+                      {filters.sort === "newest" && "Newest"}
+                      {filters.sort === "price-low" && "Price: Low to High"}
+                      {filters.sort === "price-high" && "Price: High to Low"}
+                      {filters.sort === "name-asc" && "Name: A to Z"}
+                      {filters.sort === "name-desc" && "Name: Z to A"}
+                    </span>
+                    {getSortIcon()}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleSortChange("newest")}>
+                    Newest
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSortChange("price-low")}>
+                    Price: Low to High
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSortChange("price-high")}>
+                    Price: High to Low
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSortChange("name-asc")}>
+                    Name: A to Z
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleSortChange("name-desc")}>
+                    Name: Z to A
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -219,7 +330,77 @@ const Products = () => {
               </Button>
             </div>
           ) : (
-            <ProductGrid products={filteredProducts} isLoading={isLoading} />
+            <>
+              <ProductGrid products={currentProducts} isLoading={isLoading} />
+              
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <Pagination className="mt-8">
+                  <PaginationContent>
+                    {currentPage > 1 && (
+                      <PaginationItem>
+                        <PaginationPrevious 
+                          onClick={() => handlePageChange(currentPage - 1)}
+                          className="cursor-pointer" 
+                        />
+                      </PaginationItem>
+                    )}
+                    
+                    {Array.from({ length: Math.min(5, totalPages) }).map((_, idx) => {
+                      let pageNumber: number;
+                      
+                      // Logic to show appropriate page numbers based on current page position
+                      if (totalPages <= 5) {
+                        // Show all pages if 5 or fewer total pages
+                        pageNumber = idx + 1;
+                      } else if (currentPage <= 3) {
+                        // Near beginning, show first 5 pages
+                        pageNumber = idx + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        // Near end, show last 5 pages
+                        pageNumber = totalPages - 4 + idx;
+                      } else {
+                        // Middle, show current page and 2 on each side
+                        pageNumber = currentPage - 2 + idx;
+                      }
+
+                      // Only show ellipsis at appropriate positions
+                      if (totalPages > 5) {
+                        if ((idx === 0 && pageNumber > 1) || 
+                            (idx === 4 && pageNumber < totalPages)) {
+                          return (
+                            <PaginationItem key={idx}>
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        }
+                      }
+                      
+                      return (
+                        <PaginationItem key={idx}>
+                          <PaginationLink
+                            isActive={pageNumber === currentPage}
+                            onClick={() => handlePageChange(pageNumber)}
+                            className="cursor-pointer"
+                          >
+                            {pageNumber}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    })}
+                    
+                    {currentPage < totalPages && (
+                      <PaginationItem>
+                        <PaginationNext 
+                          onClick={() => handlePageChange(currentPage + 1)} 
+                          className="cursor-pointer"
+                        />
+                      </PaginationItem>
+                    )}
+                  </PaginationContent>
+                </Pagination>
+              )}
+            </>
           )}
         </div>
       </div>
